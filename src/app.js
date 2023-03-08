@@ -18,6 +18,8 @@ class App {
         this.camera = null;
         this.controls = null;
         
+        this.valid_extensions = [ 'fbx', 'glb', 'gltf' ];
+        this.dropEnable = true;
         this.options = {};
     }
 
@@ -58,14 +60,38 @@ class App {
         dirLight.castShadow = false;
         this.scene.add(dirLight);
 
-        // TODO (?)
+        // Add text information
+        let info = document.createElement('div');
+        info.innerHTML = "Drop your files on screen";
+        let icon = document.createElement('i');
+        icon.innerHTML = "<i class='bi bi-arrow-down-square'></i>"
+        let info2 = document.createElement('div');
+        info2.innerHTML = "Supported files: [ " + this.valid_extensions + " ]";
+        
+        info.style.fontFamily = info2.style.fontFamily = "sans-serif";
+        info.style.color = info2.style.color = icon.style.color = "white";
+        info.style.position = info2.style.position = icon.style.position = 'absolute';
+        info.style.top = icon.style.top = 30 + 'px';
+        info.style.left = info2.style.left = 40 + 'px';
+        icon.style.left = 225 + 'px';
+        info2.style.top = 55 + 'px';
+        info2.style.fontSize = "small";
+
+        document.body.appendChild(info);
+        document.body.appendChild(icon);
+        document.body.appendChild(info2);
 
         // Set listeners and events
-        window.addEventListener( 'resize', this.onWindowResize.bind(this) );
-        canvas.ondragover = () => {return false};
-        canvas.ondragend = () => {return false};
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        canvas.ondragover = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
+        canvas.ondragend = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
         canvas.ondrop = (e) => this.onDrop(e);
-        
+
+        let loadModal = document.getElementById("loading");
+        loadModal.ondrop = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
+        loadModal.ondragover = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
+        loadModal.ondragend = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
+
         // Start loop
         this.animate();
     }
@@ -103,11 +129,15 @@ class App {
 
     onDrop( event ) {
 
-        this.deinit(); // clean previous things
-        document.querySelector("#loading").style.display = 'flex';
-
+        // Block multiple loads at the same time
         event.preventDefault();
         event.stopPropagation();
+
+        if (!this.dropEnable)
+            return false;
+            
+        this.dropEnable = false;
+        this.deinit(); // clean previous things
 
         const files = event.dataTransfer.files;
 
@@ -119,19 +149,20 @@ class App {
             let name = file.name;
             let tokens = name.split(".");
             let extension = tokens[tokens.length-1].toLowerCase();
-            let valid_extensions = [ 'fbx', 'glb', 'gltf' ];
             
-            if (valid_extensions.lastIndexOf(extension) < 0) {
-                alert("Invalid file extension. The supported extensions are [" + valid_extensions + "]. The input extension was '" + extension + "'");
+            if (this.valid_extensions.lastIndexOf(extension) < 0) {
+                alert("Invalid file extension. The supported extensions are [" + this.valid_extensions + "]. The input extension was '" + extension + "'");
                 return;
             }
+
+            document.querySelector("#loading").style.display = 'flex';
 
             let reader = new FileReader();
             reader.onload = (event) => {
                 if (extension == 'fbx') {
                     this.loaderFBX.load( event.target.result, (fbx) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
-                        fbx.scale.set(0.01, 0.01, 0.01); // conversion from centimeters to meters (blender glb is in cm, but our application works in m)
+                        fbx.scale.set(0.01, 0.01, 0.01); // conversion from centimeters to meters (in glb is not needed because when blender converts from fbx to glb scales from cm to m)
 
                         fbx.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
@@ -139,7 +170,6 @@ class App {
                                 if (obj.morphTargetDictionary) {
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        blendshape = blendshape.split(".")[1];
                                         this.options[blendshape] = 0; // init ...
                                         folder.add( this.options, blendshape, 0, 1 ).onChange( function( morphTargetInfluences, idx, value ) {
                                             morphTargetInfluences[idx] = value;
@@ -150,6 +180,7 @@ class App {
                                     folder.close();
                                 }
 
+                                // ...
                                 obj.castShadow = true;
                                 obj.receiveShadow = true;
                             }
@@ -158,14 +189,15 @@ class App {
 
                         this.model = fbx;
                         this.scene.add(this.model);
+                        this.dropEnable = true;
                         document.querySelector("#loading").style.display = 'none';
                     });
                 } 
                 else if (extension == 'glb' || extension == 'gltf') { 
                     this.loaderGLB.load( event.target.result, (glb) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
+                        //debugger;
                         this.model = glb.scene;
-                        this.model.scale.set(0.01, 0.01, 0.01); // conversion from centimeters to meters (blender glb is in cm, but our application works in m)
 
                         this.model.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
@@ -173,7 +205,6 @@ class App {
                                 if (obj.morphTargetDictionary) {
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        blendshape = blendshape.split(".")[1];
                                         this.options[blendshape] = 0; // init ...
                                         folder.add( this.options, blendshape, 0, 1 ).onChange( function( morphTargetInfluences, idx, value ) {
                                             morphTargetInfluences[idx] = value;
@@ -183,6 +214,8 @@ class App {
                                 else {
                                     folder.close();
                                 }
+                                
+                                // ...
                                 obj.castShadow = true;
                                 obj.receiveShadow = true;
                             }
@@ -190,12 +223,12 @@ class App {
                         } );
 
                         this.scene.add(this.model);
+                        this.dropEnable = true;
                         document.querySelector("#loading").style.display = 'none';
                     });
                 }
             };
             reader.readAsDataURL(file);
-
             
         }
     }
