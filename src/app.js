@@ -42,12 +42,12 @@ class App {
 
         // Set up camera
         this.camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.01, 100 );
-        this.camera.position.set( 0, 2, 3 );
+        this.camera.position.set( 0, 1.6, 1 );
         
         this.controls = new OrbitControls( this.camera, canvas );
         this.controls.minDistance = 0.1;
         this.controls.maxDistance = 10;
-        this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
+        this.controls.target = new THREE.Vector3( 0, 1.3, 0 );
         this.controls.update();
         
         // Set up lights
@@ -67,19 +67,22 @@ class App {
         icon.innerHTML = "<i class='bi bi-arrow-down-square'></i>"
         let info2 = document.createElement('div');
         info2.innerHTML = "Supported files: [ " + this.valid_extensions + " ]";
+        this.info3 = document.createElement('div');
         
-        info.style.fontFamily = info2.style.fontFamily = "sans-serif";
-        info.style.color = info2.style.color = icon.style.color = "white";
-        info.style.position = info2.style.position = icon.style.position = 'absolute';
+        info.style.fontFamily = info2.style.fontFamily = this.info3.style.fontFamily = "sans-serif";
+        info.style.color = info2.style.color = this.info3.style.color = icon.style.color = "white";
+        info.style.position = info2.style.position = this.info3.style.position = icon.style.position = 'absolute';
         info.style.top = icon.style.top = 30 + 'px';
-        info.style.left = info2.style.left = 40 + 'px';
+        info.style.left = info2.style.left = this.info3.style.left = 40 + 'px';
         icon.style.left = 225 + 'px';
         info2.style.top = 55 + 'px';
-        info2.style.fontSize = "small";
+        this.info3.style.top = 75 + 'px';
+        info2.style.fontSize = this.info3.style.fontSize = "small";
 
         document.body.appendChild(info);
         document.body.appendChild(icon);
         document.body.appendChild(info2);
+        document.body.appendChild(this.info3);
 
         // Set listeners and events
         window.addEventListener('resize', this.onWindowResize.bind(this));
@@ -91,6 +94,31 @@ class App {
         loadModal.ondrop = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
         loadModal.ondragover = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
         loadModal.ondragend = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
+
+        // init gui functions
+        this.options = {
+            show: ( texList, texName ) => {
+                for (let i = 0; i < texList.length; i++) {
+                    if (texName == texList[i].name) {
+                        //let handlerWindow = window.open(texList[i].src,'Image','width=700,height=700,resizable=1');
+                        let handlerWindow = window.open('','Image','width=700,height=700,resizable=1');
+                        if (handlerWindow.document.body.firstChild) handlerWindow.document.body.removeChild(handlerWindow.document.body.firstChild);
+                        handlerWindow.document.write('<img style="display:block; -webkit-user-select:none; cursor:zoom-in; margin:auto; max-width:100%; max-height:100vh; margin:auto;" src="' + texList[i].src + '"></img>');
+                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundImage = "url('../empty.jpg')";
+                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundRepeat = "no-repeat";
+                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundSize = "cover";
+                        handlerWindow.document.body.style.backgroundColor = "rgb(0,0,0)";
+                        handlerWindow.document.body.style.overflow = "hidden";
+                        handlerWindow.document.body.style.display = "grid";
+                        handlerWindow.document.body.style.height = "100%";
+                        return;
+                    }
+                }
+            },
+            setZero: () => {
+                
+            }
+        };
 
         // Start loop
         this.animate();
@@ -104,7 +132,7 @@ class App {
         if (this.gui)
            this.gui.destroy();
 
-        this.options = {};
+        this.fileOptions = {};
     }
 
     animate() {
@@ -115,7 +143,7 @@ class App {
 
         if ( this.mixer ) {
             this.mixer.update( delta );
-        } 
+        }
 
         this.renderer.render( this.scene, this.camera );
     }
@@ -155,6 +183,7 @@ class App {
                 return;
             }
 
+            this.info3.innerHTML = "Loaded file: " + file.name;
             document.querySelector("#loading").style.display = 'flex';
 
             let reader = new FileReader();
@@ -167,24 +196,44 @@ class App {
                         fbx.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
                                 let folder = this.gui.addFolder(obj.name);
+
                                 if (obj.morphTargetDictionary) {
+                                    let morphFold = folder.addFolder("Morpher");
+                                    morphFold.add(this.options, 'setZero').name('Set all Zero');
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        this.options[blendshape] = 0; // init ...
-                                        folder.add( this.options, blendshape, 0, 1 ).onChange( function( morphTargetInfluences, idx, value ) {
+                                        this.fileOptions[blendshape] = 0; // init ...
+                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).onChange( function(morphTargetInfluences, idx, value) {
                                             morphTargetInfluences[idx] = value;
                                         }.bind(this, obj.morphTargetInfluences, idx) );
                                     }
+                                    morphFold.close();
                                 }
-                                else {
-                                    folder.close();
+                                
+                                if (obj.material) {
+                                    let material = obj.material;
+                                    let matFold = folder.addFolder(material.name + " [ " + material.type + " ]");
+                                    if (!!material.map) matFold.add({show: this.options.show.bind(this, 1)}, 'show').name('Albedo Tex');
+                                    if (!!material.aoMap) matFold.add(this.options, 'show').name('Ambient Occlussion Tex');
+                                    if (!!material.bumpMap) matFold.add(this.options, 'show').name('Bump Tex');
+                                    if (!!material.displacementMap) matFold.add(this.options, 'show').name('Displacement Tex');
+                                    if (!!material.emissiveMap) matFold.add(this.options, 'show').name('Emissive Tex');
+                                    if (!!material.normalMap) matFold.add(this.options, 'show').name('Normal Tex');
+                                    if (!!material.specularMap) matFold.add(this.options, 'show').name('Specular Tex');
+                                    if (!!material.alphaMap) matFold.add(this.options, 'show').name('Transparency Tex');
+                                    matFold.close();
                                 }
 
+                                if (obj.name == "Cornea") {
+                                    obj.visible = false;
+                                }
+                                
                                 // ...
                                 obj.castShadow = true;
                                 obj.receiveShadow = true;
+                                
+                                folder.close();
                             }
-
                         } );
 
                         this.model = fbx;
@@ -196,30 +245,71 @@ class App {
                 else if (extension == 'glb' || extension == 'gltf') { 
                     this.loaderGLB.load( event.target.result, (glb) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
-                        //debugger;
                         this.model = glb.scene;
+
+                        // read textures url
+                        let textures = [];
+                        const parser = glb.parser;
+                        const bufferPromises = parser.json.images.map((imageDef) => {
+                            return parser.getDependency('bufferView', imageDef.bufferView);
+                        });
+                        Promise.all(bufferPromises).then( (buffers => {  
+                            for (i = 0; i < buffers.length; i++) {
+                                let arrayBufferView = new Uint8Array( buffers[i] );
+                                let blob = new Blob( [ arrayBufferView ], { type: "image/png" } );
+                                let urlCreator = window.URL || window.webkitURL;
+                                let imageUrl = urlCreator.createObjectURL( blob );
+                                textures.push({imageName: parser.json.images[i].name, name: parser.json.textures[i].name, src: imageUrl});
+                            }
+                        }) );
+
 
                         this.model.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
                                 let folder = this.gui.addFolder(obj.name);
+
                                 if (obj.morphTargetDictionary) {
+                                    let morphFold = folder.addFolder("Morpher");
+                                    morphFold.add(this.options, 'setZero').name('Set all Zero');
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        this.options[blendshape] = 0; // init ...
-                                        folder.add( this.options, blendshape, 0, 1 ).onChange( function( morphTargetInfluences, idx, value ) {
+                                        this.fileOptions[blendshape] = 0; // init ...
+                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).onChange( function(morphTargetInfluences, idx, value) {
                                             morphTargetInfluences[idx] = value;
                                         }.bind(this, obj.morphTargetInfluences, idx) );
                                     }
+                                    morphFold.close();
                                 }
-                                else {
-                                    folder.close();
+                                
+                                if (obj.material) {
+                                    let material = obj.material;
+                                    let matFold = folder.addFolder(material.name + " [ " + material.type + " ]");
+                                    if (!!material.map) matFold.add({show: this.options.show.bind(this, textures, material.map.name)}, 'show').name('Albedo Texture');
+                                    if (!!material.aoMap) matFold.add({show: this.options.show.bind(this, textures, material.aoMap.name)}, 'show').name('Ambient Occlussion Texture');
+                                    if (!!material.normalMap) matFold.add({show: this.options.show.bind(this, textures, material.normalMap.name)}, 'show').name('Normal Texture');
+                                    if (!!material.specularIntensityMap) matFold.add({show: this.options.show.bind(this, textures, material.specularIntensityMap.name)}, 'show').name('Specular Texture');
+                                    if (!!material.emissiveMap) matFold.add({show: this.options.show.bind(this, textures, material.emissiveMap.name)}, 'show').name('Emissive Texture');
+                                    // alpha is included in the base color texture as the 4th channel
+                                    if (!!material.alphaMap) matFold.add({show: this.options.show.bind(this, textures, material.alphaMap.name)}, 'show').name('Alpha Texture');
+                                    // roughness and metalness are combined in one texture: RGBA - (1, roughness, metalness, 1)
+                                    if (!!material.roughnessMap) matFold.add({show: this.options.show.bind(this, textures, material.roughnessMap.name)}, 'show').name('Roughness Texture');
+                                    if (!!material.metalnessMap) matFold.add({show: this.options.show.bind(this, textures, material.metalnessMap.name)}, 'show').name('Metalness Texture');
+
+                                    if (!!material.bumpMap) matFold.add({show: this.options.show.bind(this, textures, material.bumpMap.name)}, 'show').name('Bump Texture');
+                                    if (!!material.displacementMap) matFold.add({show: this.options.show.bind(this, textures, material.displacementMap.name)}, 'show').name('Displacement Texture');
+                                    matFold.close();
+                                }
+
+                                if (obj.name == "Cornea") {
+                                    obj.visible = false;
                                 }
                                 
                                 // ...
                                 obj.castShadow = true;
                                 obj.receiveShadow = true;
+                                
+                                folder.close();
                             }
-
                         } );
 
                         this.scene.add(this.model);
