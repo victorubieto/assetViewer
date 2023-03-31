@@ -34,8 +34,6 @@ class App {
         this.renderer.setPixelRatio( window.devicePixelRatio );
         this.renderer.setSize( window.innerWidth, window.innerHeight );
         this.renderer.outputEncoding = THREE.sRGBEncoding;
-        this.renderer.gammaInput = true; // applies degamma to textures ( not applied to material.color and roughness, metalnes, etc. Only to colour textures )
-        this.renderer.gammaOutput = true; // applies gamma after all lighting operations ( which are done in linear space )
         
         const canvas = this.renderer.domElement;
         document.body.appendChild( canvas );
@@ -195,7 +193,8 @@ class App {
 
                         fbx.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
-                                let folder = this.gui.addFolder(obj.name);
+                                let folder = this.gui.addFolder(obj.name)
+                                folder.style.backgroundColor = "darkslateblue";
 
                                 if (obj.morphTargetDictionary) {
                                     let morphFold = folder.addFolder("Morpher");
@@ -245,6 +244,7 @@ class App {
                 else if (extension == 'glb' || extension == 'gltf') { 
                     this.loaderGLB.load( event.target.result, (glb) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
+                        this.gui.domElement.style.backgroundColor = "rgb(40 40 40)";
                         this.model = glb.scene;
 
                         // read textures url
@@ -267,10 +267,17 @@ class App {
                         this.model.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
                                 let folder = this.gui.addFolder(obj.name);
+                                folder.$title.style.backgroundColor = "rgb(31,31,31)";
+                                folder.domElement.style.backgroundColor = "rgb(40 40 40)";
+                                
+                                folder.add({ visible: true },'visible').name('Visible').listen().onChange( (value) => {
+                                    obj.visible = value;
+                                } );
 
                                 if (obj.morphTargetDictionary) {
                                     let morphFold = folder.addFolder("Morpher");
                                     morphFold.add(this.options, 'setZero').name('Set all Zero');
+                                    morphFold.domElement.style.backgroundColor = "rgb(40 40 40)";
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
                                         this.fileOptions[blendshape] = 0; // init ...
@@ -283,7 +290,9 @@ class App {
                                 
                                 if (obj.material) {
                                     let material = obj.material;
+                                    material.side = THREE.DoubleSide;
                                     let matFold = folder.addFolder(material.name + " [ " + material.type + " ]");
+                                    matFold.domElement.style.backgroundColor = "rgb(40 40 40)";
                                     if (!!material.map) matFold.add({show: this.options.show.bind(this, textures, material.map.name)}, 'show').name('Albedo Texture');
                                     if (!!material.aoMap) matFold.add({show: this.options.show.bind(this, textures, material.aoMap.name)}, 'show').name('Ambient Occlussion Texture');
                                     if (!!material.normalMap) matFold.add({show: this.options.show.bind(this, textures, material.normalMap.name)}, 'show').name('Normal Texture');
@@ -298,10 +307,6 @@ class App {
                                     if (!!material.bumpMap) matFold.add({show: this.options.show.bind(this, textures, material.bumpMap.name)}, 'show').name('Bump Texture');
                                     if (!!material.displacementMap) matFold.add({show: this.options.show.bind(this, textures, material.displacementMap.name)}, 'show').name('Displacement Texture');
                                     matFold.close();
-                                }
-
-                                if (obj.name == "Cornea") {
-                                    obj.visible = false;
                                 }
                                 
                                 // ...
