@@ -94,29 +94,7 @@ class App {
         loadModal.ondragend = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
 
         // init gui functions
-        this.options = {
-            show: ( texList, texName ) => {
-                for (let i = 0; i < texList.length; i++) {
-                    if (texName == texList[i].name) {
-                        //let handlerWindow = window.open(texList[i].src,'Image','width=700,height=700,resizable=1');
-                        let handlerWindow = window.open('','Image','width=700,height=700,resizable=1');
-                        if (handlerWindow.document.body.firstChild) handlerWindow.document.body.removeChild(handlerWindow.document.body.firstChild);
-                        handlerWindow.document.write('<img style="display:block; -webkit-user-select:none; cursor:zoom-in; margin:auto; max-width:100%; max-height:100vh; margin:auto;" src="' + texList[i].src + '"></img>');
-                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundImage = "url('../empty.jpg')";
-                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundRepeat = "no-repeat";
-                        handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundSize = "cover";
-                        handlerWindow.document.body.style.backgroundColor = "rgb(0,0,0)";
-                        handlerWindow.document.body.style.overflow = "hidden";
-                        handlerWindow.document.body.style.display = "grid";
-                        handlerWindow.document.body.style.height = "100%";
-                        return;
-                    }
-                }
-            },
-            setZero: () => {
-                
-            }
-        };
+        this.options = {};
 
         // Start loop
         this.animate();
@@ -244,7 +222,7 @@ class App {
                 else if (extension == 'glb' || extension == 'gltf') { 
                     this.loaderGLB.load( event.target.result, (glb) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
-                        this.gui.domElement.style.backgroundColor = "rgb(40 40 40)";
+                        this.gui.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                         this.model = glb.scene;
 
                         // read textures url
@@ -259,7 +237,23 @@ class App {
                                 let blob = new Blob( [ arrayBufferView ], { type: "image/png" } );
                                 let urlCreator = window.URL || window.webkitURL;
                                 let imageUrl = urlCreator.createObjectURL( blob );
-                                textures.push({imageName: parser.json.images[i].name, name: parser.json.textures[i].name, src: imageUrl});
+                                let sourceID = parser.json.textures[i].source;
+                                let id = '';
+                                for (let [key, value] of parser.associations) {
+                                    if (typeof value.textures !== "undefined") {
+                                        if (value.textures == sourceID) {
+                                            id = key.uuid;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // !!! check this texture, is strange !!!
+                                // if (parser.json.images[i].name == "Image") {
+                                //     window.open(imageUrl,'Image','width=700, height=700, resizable=1');
+                                // }
+
+                                textures.push({imageName: parser.json.images[i].name, texID: id, src: imageUrl});
                             }
                         }) );
 
@@ -267,8 +261,8 @@ class App {
                         this.model.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
                                 let folder = this.gui.addFolder(obj.name);
-                                folder.$title.style.backgroundColor = "rgb(31,31,31)";
-                                folder.domElement.style.backgroundColor = "rgb(40 40 40)";
+                                folder.$title.style.backgroundColor = "rgb(31, 31, 31)";
+                                folder.domElement.style.backgroundColor = "rgb(40, 40 ,40)";
                                 
                                 folder.add({ visible: true },'visible').name('Visible').listen().onChange( (value) => {
                                     obj.visible = value;
@@ -276,14 +270,17 @@ class App {
 
                                 if (obj.morphTargetDictionary) {
                                     let morphFold = folder.addFolder("Morpher");
-                                    morphFold.add(this.options, 'setZero').name('Set all Zero');
-                                    morphFold.domElement.style.backgroundColor = "rgb(40 40 40)";
+                                    morphFold.add({setZero: this.setZero.bind(this, obj.morphTargetInfluences)}, 'setZero').name('Set all Zero');
+                                    morphFold.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        this.fileOptions[blendshape] = 0; // init ...
-                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).onChange( function(morphTargetInfluences, idx, value) {
-                                            morphTargetInfluences[idx] = value;
-                                        }.bind(this, obj.morphTargetInfluences, idx) );
+                                        this.fileOptions[blendshape] = obj.morphTargetInfluences[idx]; // init ...
+                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).listen().onChange( (value) => {
+                                                obj.morphTargetInfluences[idx] = value;
+                                        } );
+                                        // morphFold.add( this.fileOptions, blendshape, 0, 1 ).onChange( function(morphTargetInfluences, idx, value) {
+                                        //     morphTargetInfluences[idx] = value;
+                                        // }.bind(this, obj.morphTargetInfluences, idx) );
                                     }
                                     morphFold.close();
                                 }
@@ -293,19 +290,19 @@ class App {
                                     material.side = THREE.DoubleSide;
                                     let matFold = folder.addFolder(material.name + " [ " + material.type + " ]");
                                     matFold.domElement.style.backgroundColor = "rgb(40 40 40)";
-                                    if (!!material.map) matFold.add({show: this.options.show.bind(this, textures, material.map.name)}, 'show').name('Albedo Texture');
-                                    if (!!material.aoMap) matFold.add({show: this.options.show.bind(this, textures, material.aoMap.name)}, 'show').name('Ambient Occlussion Texture');
-                                    if (!!material.normalMap) matFold.add({show: this.options.show.bind(this, textures, material.normalMap.name)}, 'show').name('Normal Texture');
-                                    if (!!material.specularIntensityMap) matFold.add({show: this.options.show.bind(this, textures, material.specularIntensityMap.name)}, 'show').name('Specular Texture');
-                                    if (!!material.emissiveMap) matFold.add({show: this.options.show.bind(this, textures, material.emissiveMap.name)}, 'show').name('Emissive Texture');
+                                    if (!!material.map) matFold.add({show: this.show.bind(this, textures, material.map.uuid)}, 'show').name('Albedo Texture');
+                                    if (!!material.aoMap) matFold.add({show: this.show.bind(this, textures, material.aoMap.uuid)}, 'show').name('Ambient Occlussion Texture');
+                                    if (!!material.normalMap) matFold.add({show: this.show.bind(this, textures, material.normalMap.uuid)}, 'show').name('Normal Texture');
+                                    if (!!material.specularIntensityMap) matFold.add({show: this.show.bind(this, textures, material.specularIntensityMap.uuid)}, 'show').name('Specular Texture');
+                                    if (!!material.emissiveMap) matFold.add({show: this.show.bind(this, textures, material.emissiveMap.uuid)}, 'show').name('Emissive Texture');
                                     // alpha is included in the base color texture as the 4th channel
-                                    if (!!material.alphaMap) matFold.add({show: this.options.show.bind(this, textures, material.alphaMap.name)}, 'show').name('Alpha Texture');
+                                    if (!!material.alphaMap) matFold.add({show: this.show.bind(this, textures, material.alphaMap.uuid)}, 'show').name('Alpha Texture');
                                     // roughness and metalness are combined in one texture: RGBA - (1, roughness, metalness, 1)
-                                    if (!!material.roughnessMap) matFold.add({show: this.options.show.bind(this, textures, material.roughnessMap.name)}, 'show').name('Roughness Texture');
-                                    if (!!material.metalnessMap) matFold.add({show: this.options.show.bind(this, textures, material.metalnessMap.name)}, 'show').name('Metalness Texture');
+                                    if (!!material.roughnessMap) matFold.add({show: this.show.bind(this, textures, material.roughnessMap.uuid)}, 'show').name('Roughness Texture');
+                                    if (!!material.metalnessMap) matFold.add({show: this.show.bind(this, textures, material.metalnessMap.uuid)}, 'show').name('Metalness Texture');
 
-                                    if (!!material.bumpMap) matFold.add({show: this.options.show.bind(this, textures, material.bumpMap.name)}, 'show').name('Bump Texture');
-                                    if (!!material.displacementMap) matFold.add({show: this.options.show.bind(this, textures, material.displacementMap.name)}, 'show').name('Displacement Texture');
+                                    if (!!material.bumpMap) matFold.add({show: this.show.bind(this, textures, material.bumpMap.uuid)}, 'show').name('Bump Texture');
+                                    if (!!material.displacementMap) matFold.add({show: this.show.bind(this, textures, material.displacementMap.uuid)}, 'show').name('Displacement Texture');
                                     matFold.close();
                                 }
                                 
@@ -324,8 +321,36 @@ class App {
                 }
             };
             reader.readAsDataURL(file);
-            
         }
+    }
+
+    show ( texList, texID ) {
+        for (let i = 0; i < texList.length; i++) {
+            if (texID == texList[i].texID) {
+                //let handlerWindow = window.open(texList[i].src,'Image','width=700,height=700,resizable=1');
+                let handlerWindow = window.open('','Image','width=700,height=700,resizable=1');
+                if (handlerWindow.document.body.firstChild) handlerWindow.document.body.removeChild(handlerWindow.document.body.firstChild);
+                handlerWindow.document.write('<img style="display:block; -webkit-user-select:none; cursor:zoom-in; margin:auto; max-width:100%; max-height:100vh; margin:auto;" src="' + texList[i].src + '"></img>');
+                handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundImage = "url('../empty.jpg')";
+                handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundRepeat = "no-repeat";
+                handlerWindow.document.body.getElementsByTagName('img')[0].style.backgroundSize = "cover";
+                handlerWindow.document.body.style.backgroundColor = "rgb(0,0,0)";
+                handlerWindow.document.body.style.overflow = "hidden";
+                handlerWindow.document.body.style.display = "grid";
+                handlerWindow.document.body.style.height = "100%";
+                return;
+            }
+        }
+    }
+    
+    setZero ( morphTargetInfluences ) {
+        for (let val = 0; val < morphTargetInfluences.length; val++) { 
+            morphTargetInfluences[val] = 0;
+        }
+        for (let blendshape in this.fileOptions) {
+            this.fileOptions[blendshape] = 0;
+        }
+        return;
     }
 }
 
