@@ -200,10 +200,6 @@ class App {
                                     if (!!material.alphaMap) matFold.add(this.options, 'show').name('Transparency Tex');
                                     matFold.close();
                                 }
-
-                                if (obj.name == "Cornea") {
-                                    obj.visible = false;
-                                }
                                 
                                 // ...
                                 obj.castShadow = true;
@@ -224,45 +220,49 @@ class App {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
                         this.gui.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                         this.model = glb.scene;
+                        const parser = glb.parser;
+                        let textures = [];
 
                         // read textures url
-                        let textures = [];
-                        const parser = glb.parser;
-                        const bufferPromises = parser.json.images.map((imageDef) => {
-                            return parser.getDependency('bufferView', imageDef.bufferView);
-                        });
-                        Promise.all(bufferPromises).then( (buffers => {  
-                            for (i = 0; i < buffers.length; i++) {
-                                let arrayBufferView = new Uint8Array( buffers[i] );
-                                let blob = new Blob( [ arrayBufferView ], { type: "image/png" } );
-                                let urlCreator = window.URL || window.webkitURL;
-                                let imageUrl = urlCreator.createObjectURL( blob );
-                                let sourceID = parser.json.textures[i].source;
-                                let id = '';
-                                for (let [key, value] of parser.associations) {
-                                    if (typeof value.textures !== "undefined") {
-                                        if (value.textures == sourceID) {
-                                            id = key.uuid;
-                                            break;
+                        if (parser.json.images) {
+                            const bufferPromises = parser.json.images.map((imageDef) => {
+                                return parser.getDependency('bufferView', imageDef.bufferView);
+                            });
+                            Promise.all(bufferPromises).then( buffers => {  
+                                for (i = 0; i < buffers.length; i++) {
+                                    let arrayBufferView = new Uint8Array( buffers[i] );
+                                    let blob = new Blob( [ arrayBufferView ], { type: "image/png" } );
+                                    let urlCreator = window.URL || window.webkitURL;
+                                    let imageUrl = urlCreator.createObjectURL( blob );
+                                    let sourceID = parser.json.textures[i].source;
+                                    let id = '';
+                                    for (let [key, value] of parser.associations) {
+                                        if (typeof value.textures !== "undefined") {
+                                            if (value.textures == sourceID) {
+                                                id = key.uuid;
+                                                break;
+                                            }
                                         }
                                     }
+    
+                                    // !!! check this texture, is strange !!!
+                                    // if (parser.json.images[i].name == "Image") {
+                                    //     window.open(imageUrl,'Image','width=700, height=700, resizable=1');
+                                    // }
+    
+                                    textures.push({imageName: parser.json.images[i].name, texID: id, src: imageUrl});
                                 }
-
-                                // !!! check this texture, is strange !!!
-                                // if (parser.json.images[i].name == "Image") {
-                                //     window.open(imageUrl,'Image','width=700, height=700, resizable=1');
-                                // }
-
-                                textures.push({imageName: parser.json.images[i].name, texID: id, src: imageUrl});
-                            }
-                        }) );
+                            } );
+                        } else {
+                            console.log("This glb does not have textures.");
+                        }
 
 
                         this.model.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
                                 let folder = this.gui.addFolder(obj.name);
                                 folder.$title.style.backgroundColor = "rgb(31, 31, 31)";
-                                folder.domElement.style.backgroundColor = "rgb(40, 40 ,40)";
+                                folder.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                                 
                                 folder.add({ visible: true },'visible').name('Visible').listen().onChange( (value) => {
                                     obj.visible = value;
