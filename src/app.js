@@ -2,6 +2,7 @@ import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/exporters/GLTFExporter.js';
 import { GUI } from 'https://cdn.skypack.dev/lil-gui';
 
 class App {
@@ -11,6 +12,7 @@ class App {
         this.clock = new THREE.Clock();
         this.loaderFBX = new FBXLoader();
         this.loaderGLB = new GLTFLoader();
+        this.exporterGLB = new GLTFExporter();
 
         // main render attributes
         this.scene = null;
@@ -93,6 +95,16 @@ class App {
         loadModal.ondragover = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
         loadModal.ondragend = (e) => {e.preventDefault(); e.stopPropagation(); return false;};
 
+        this.link = document.createElement( 'a' );
+        this.link.style.display = 'none';
+        document.body.appendChild( this.link ); // Firefox workaround, see #6594
+
+        window.addEventListener("keydown", (event) => {
+            if (event.which === 69) {
+                this.exportGLTF( this.model );
+            }
+          });
+
         // init gui functions
         this.options = {};
 
@@ -167,38 +179,31 @@ class App {
                 if (extension == 'fbx') {
                     this.loaderFBX.load( event.target.result, (fbx) => {
                         this.gui = new GUI().title('Assets Information'); // TODO: revise that it resets at every load
+                        this.gui.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                         fbx.scale.set(0.01, 0.01, 0.01); // conversion from centimeters to meters (in glb is not needed because when blender converts from fbx to glb scales from cm to m)
 
                         fbx.traverse( (obj) => {
                             if (obj.isMesh || obj.isSkinnedMesh) {
-                                let folder = this.gui.addFolder(obj.name)
-                                folder.style.backgroundColor = "darkslateblue";
+                                let folder = this.gui.addFolder(obj.name);
+                                folder.$title.style.backgroundColor = "rgb(31, 31, 31)";
+                                folder.domElement.style.backgroundColor = "rgb(40, 40, 40)";
+                                
+                                folder.add({ visible: true },'visible').name('Visible').listen().onChange( (value) => {
+                                    obj.visible = value;
+                                } );
 
                                 if (obj.morphTargetDictionary) {
                                     let morphFold = folder.addFolder("Morpher");
-                                    morphFold.add(this.options, 'setZero').name('Set all Zero');
+                                    morphFold.add({setZero: this.setZero.bind(this, obj.morphTargetInfluences)}, 'setZero').name('Set all Zero');
+                                    morphFold.domElement.style.backgroundColor = "rgb(40, 40, 40)";
                                     for (let blendshape in obj.morphTargetDictionary) {
                                         let idx = obj.morphTargetDictionary[blendshape];
-                                        this.fileOptions[blendshape] = 0; // init ...
-                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).onChange( function(morphTargetInfluences, idx, value) {
-                                            morphTargetInfluences[idx] = value;
-                                        }.bind(this, obj.morphTargetInfluences, idx) );
+                                        this.fileOptions[blendshape] = obj.morphTargetInfluences[idx]; // init ...
+                                        morphFold.add( this.fileOptions, blendshape, 0, 1 ).listen().onChange( (value) => {
+                                                obj.morphTargetInfluences[idx] = value;
+                                        } );
                                     }
                                     morphFold.close();
-                                }
-                                
-                                if (obj.material) {
-                                    let material = obj.material;
-                                    let matFold = folder.addFolder(material.name + " [ " + material.type + " ]");
-                                    if (!!material.map) matFold.add({show: this.options.show.bind(this, 1)}, 'show').name('Albedo Tex');
-                                    if (!!material.aoMap) matFold.add(this.options, 'show').name('Ambient Occlussion Tex');
-                                    if (!!material.bumpMap) matFold.add(this.options, 'show').name('Bump Tex');
-                                    if (!!material.displacementMap) matFold.add(this.options, 'show').name('Displacement Tex');
-                                    if (!!material.emissiveMap) matFold.add(this.options, 'show').name('Emissive Tex');
-                                    if (!!material.normalMap) matFold.add(this.options, 'show').name('Normal Tex');
-                                    if (!!material.specularMap) matFold.add(this.options, 'show').name('Specular Tex');
-                                    if (!!material.alphaMap) matFold.add(this.options, 'show').name('Transparency Tex');
-                                    matFold.close();
                                 }
                                 
                                 // ...
@@ -325,6 +330,7 @@ class App {
     }
 
     show ( texList, texID ) {
+
         for (let i = 0; i < texList.length; i++) {
             if (texID == texList[i].texID) {
                 //let handlerWindow = window.open(texList[i].src,'Image','width=700,height=700,resizable=1');
@@ -344,6 +350,7 @@ class App {
     }
     
     setZero ( morphTargetInfluences ) {
+
         for (let val = 0; val < morphTargetInfluences.length; val++) { 
             morphTargetInfluences[val] = 0;
         }
@@ -351,6 +358,51 @@ class App {
             this.fileOptions[blendshape] = 0;
         }
         return;
+    }
+
+    exportGLTF ( input ) {
+
+        const options = {
+            trs: false,
+            onlyVisible: true,
+            binary: true,
+            maxTextureSize: 4096
+        };
+
+        this.exporterGLB.parse(
+            input,
+            ( result ) => {
+                if ( result instanceof ArrayBuffer ) {
+                    this.saveArrayBuffer( result, 'scene.glb' );
+                } else {
+                    const output = JSON.stringify( result, null, 2 );
+                    console.log( output );
+                    this.saveString( output, 'scene.gltf' );
+                }
+            },
+            ( error ) => {
+                console.log( 'An error happened during parsing', error );
+            },
+            options
+        );
+    }
+
+    saveString ( text, filename ) {
+
+        this.save( new Blob( [ text ], { type: 'text/plain' } ), filename );
+    }
+    
+    saveArrayBuffer ( buffer, filename ) {
+
+        this.save( new Blob( [ buffer ], { type: 'application/octet-stream' } ), filename );
+    }
+
+    save ( blob, filename ) {
+
+        this.link.href = URL.createObjectURL( blob );
+        this.link.download = filename;
+        this.link.click();
+        URL.revokeObjectURL( this.link.href ); //breaks Firefox...
     }
 }
 
